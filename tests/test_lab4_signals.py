@@ -6,9 +6,10 @@ from lab4.phaseC import _asof, benjamini_hochberg, daily_signals, onsets
 
 
 def test_asof_uses_only_values_published_by_then():
-    s = pd.Series([1.0, 2.0, 3.0], index=pd.to_datetime(["2022-01-01 08:00", "2022-01-01 16:00", "2022-01-02 00:00:01"],
-                                                          utc=True))
-    when = pd.to_datetime(["2022-01-01 07:59", "2022-01-01 16:00", "2022-01-02 00:00"], utc=True)
+    ts = [pd.Timestamp(x, tz="UTC") for x in ("2022-01-01 08:00:00", "2022-01-01 16:00:00", "2022-01-02 00:00:01")]
+    s = pd.Series([1.0, 2.0, 3.0], index=pd.DatetimeIndex(ts))
+    when = pd.DatetimeIndex([pd.Timestamp(x, tz="UTC") for x in ("2022-01-01 07:59:00", "2022-01-01 16:00:00",
+                                                                  "2022-01-02 00:00:00")])
     out = _asof(s, when)
     assert np.isnan(out[0]) and out[1] == 2.0 and out[2] == 2.0   # 00:00:01 is not known at 00:00
 
