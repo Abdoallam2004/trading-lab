@@ -1,0 +1,346 @@
+{
+ "frozen_at": "2026-10-02T08:25:24+00:00",
+ "dev_end": "2025-09-30 23:59:59+00:00",
+ "holdout": "2025-10-01 .. 2026-09-30 (not loaded before this file existed)",
+ "n_trials_for_dsr": 229,
+ "sr_variance_across_trials": 0.07152783574440413,
+ "walk_forward": {
+  "train_months": 12,
+  "test_months": 3,
+  "min_train_trades": 30,
+  "selection": "max expectancy in R on BTC, 1x costs"
+ },
+ "setups": {
+  "T1": {
+   "rules": [
+    "touches",
+    "width"
+   ],
+   "spec_rules": [
+    "time_stop",
+    "touches",
+    "trend",
+    "width"
+   ],
+   "grid": [
+    {
+     "tf": "1h",
+     "L": 30,
+     "target": "H"
+    },
+    {
+     "tf": "1h",
+     "L": 30,
+     "target": "2R"
+    },
+    {
+     "tf": "1h",
+     "L": 60,
+     "target": "H"
+    },
+    {
+     "tf": "1h",
+     "L": 60,
+     "target": "2R"
+    },
+    {
+     "tf": "4h",
+     "L": 30,
+     "target": "H"
+    },
+    {
+     "tf": "4h",
+     "L": 30,
+     "target": "2R"
+    },
+    {
+     "tf": "4h",
+     "L": 60,
+     "target": "H"
+    },
+    {
+     "tf": "4h",
+     "L": 60,
+     "target": "2R"
+    },
+    {
+     "tf": "1d",
+     "L": 30,
+     "target": "H"
+    },
+    {
+     "tf": "1d",
+     "L": 30,
+     "target": "2R"
+    },
+    {
+     "tf": "1d",
+     "L": 60,
+     "target": "H"
+    },
+    {
+     "tf": "1d",
+     "L": 60,
+     "target": "2R"
+    }
+   ],
+   "dev_label": "FAIL",
+   "dev_oos_expectancy": -0.09392451755410247,
+   "dev_oos_trades": 250,
+   "last_dev_choice": {
+    "tf": "4h",
+    "L": 30,
+    "target": "2R"
+   }
+  },
+  "T1b": {
+   "rules": [],
+   "spec_rules": [
+    "time_stop",
+    "trend"
+   ],
+   "grid": [
+    {
+     "tf": "1h",
+     "target": "H"
+    },
+    {
+     "tf": "1h",
+     "target": "2R"
+    },
+    {
+     "tf": "4h",
+     "target": "H"
+    },
+    {
+     "tf": "4h",
+     "target": "2R"
+    },
+    {
+     "tf": "1d",
+     "target": "H"
+    },
+    {
+     "tf": "1d",
+     "target": "2R"
+    }
+   ],
+   "dev_label": "FAIL",
+   "dev_oos_expectancy": -0.21148617109719076,
+   "dev_oos_trades": 179,
+   "last_dev_choice": {
+    "tf": "4h",
+    "target": "2R"
+   }
+  },
+  "T2": {
+   "rules": [
+    "body",
+    "trend"
+   ],
+   "spec_rules": [
+    "body",
+    "trend"
+   ],
+   "grid": [
+    {
+     "m": 1.5,
+     "entry": "immediate",
+     "target_r": 1.0
+    },
+    {
+     "m": 1.5,
+     "entry": "immediate",
+     "target_r": 2.0
+    },
+    {
+     "m": 1.5,
+     "entry": "retest",
+     "target_r": 1.0
+    },
+    {
+     "m": 1.5,
+     "entry": "retest",
+     "target_r": 2.0
+    },
+    {
+     "m": 2.0,
+     "entry": "immediate",
+     "target_r": 1.0
+    },
+    {
+     "m": 2.0,
+     "entry": "immediate",
+     "target_r": 2.0
+    },
+    {
+     "m": 2.0,
+     "entry": "retest",
+     "target_r": 1.0
+    },
+    {
+     "m": 2.0,
+     "entry": "retest",
+     "target_r": 2.0
+    }
+   ],
+   "dev_label": "FAIL",
+   "dev_oos_expectancy": -0.4128347622711634,
+   "dev_oos_trades": 2983,
+   "last_dev_choice": {
+    "m": 2.0,
+    "entry": "immediate",
+    "target_r": 2.0
+   }
+  },
+  "T3": {
+   "rules": [
+    "trend",
+    "two_green"
+   ],
+   "spec_rules": [
+    "trend",
+    "two_green"
+   ],
+   "grid": [
+    {
+     "tf": "15m",
+     "k": 3
+    },
+    {
+     "tf": "15m",
+     "k": 5
+    },
+    {
+     "tf": "1h",
+     "k": 3
+    },
+    {
+     "tf": "1h",
+     "k": 5
+    },
+    {
+     "tf": "4h",
+     "k": 3
+    },
+    {
+     "tf": "4h",
+     "k": 5
+    }
+   ],
+   "dev_label": "FAIL",
+   "dev_oos_expectancy": -0.1790669149163578,
+   "dev_oos_trades": 336,
+   "last_dev_choice": {
+    "tf": "1h",
+    "k": 5
+   }
+  },
+  "T4": {
+   "rules": [],
+   "spec_rules": [
+    "consolidation",
+    "rr",
+    "structure"
+   ],
+   "grid": [
+    {
+     "tf": "1h"
+    },
+    {
+     "tf": "4h"
+    },
+    {
+     "tf": "1d"
+    }
+   ],
+   "dev_label": "FAIL",
+   "dev_oos_expectancy": -0.3237052366323863,
+   "dev_oos_trades": 324,
+   "last_dev_choice": {
+    "tf": "1h"
+   }
+  },
+  "T5": {
+   "rules": [],
+   "spec_rules": [
+    "rsi",
+    "trend"
+   ],
+   "grid": [
+    {
+     "tf": "15m"
+    },
+    {
+     "tf": "1h"
+    },
+    {
+     "tf": "4h"
+    }
+   ],
+   "dev_label": "FAIL",
+   "dev_oos_expectancy": -0.1273921704320194,
+   "dev_oos_trades": 449,
+   "last_dev_choice": {
+    "tf": "4h"
+   }
+  },
+  "T6": {
+   "rules": [],
+   "spec_rules": [
+    "time30"
+   ],
+   "grid": [
+    {
+     "tf": "1h",
+     "b": 0.03,
+     "d": 0.02
+    },
+    {
+     "tf": "1h",
+     "b": 0.03,
+     "d": 0.04
+    },
+    {
+     "tf": "1h",
+     "b": 0.05,
+     "d": 0.02
+    },
+    {
+     "tf": "1h",
+     "b": 0.05,
+     "d": 0.04
+    },
+    {
+     "tf": "4h",
+     "b": 0.03,
+     "d": 0.02
+    },
+    {
+     "tf": "4h",
+     "b": 0.03,
+     "d": 0.04
+    },
+    {
+     "tf": "4h",
+     "b": 0.05,
+     "d": 0.02
+    },
+    {
+     "tf": "4h",
+     "b": 0.05,
+     "d": 0.04
+    }
+   ],
+   "dev_label": "FAIL",
+   "dev_oos_expectancy": -0.001204410135755881,
+   "dev_oos_trades": 99,
+   "last_dev_choice": {
+    "tf": "1h",
+    "b": 0.03,
+    "d": 0.02
+   }
+  }
+ },
+ "sha256": "906682460d97747885532e5a3fd64ece708be4993c04e566f6086e9754f3d707"
+}
