@@ -63,9 +63,9 @@ def daily_inputs(asset: str, btc_daily: pd.DataFrame) -> pd.DataFrame:
     d["premium"] = _asof(prem, known)
     sma = btc_daily["close"].rolling(200, min_periods=200).mean()
     d["btc_up"] = (btc_daily["close"] > sma).reindex(d.index).fillna(False).astype(bool)
-    slope = sma / sma.shift(20) - 1
+    slope = (sma / sma.shift(20) - 1).reindex(d.index)
     d["regime3"] = np.select([slope > 0.02, slope < -0.02], ["bull", "bear"], "range")
-    d.loc[slope.reindex(d.index).isna().to_numpy(), "regime3"] = "none"
+    d.loc[slope.isna().to_numpy(), "regime3"] = "none"
     d["regime2"] = np.where(d["btc_up"], "BTC>200D", "BTC<200D")
     return d
 
