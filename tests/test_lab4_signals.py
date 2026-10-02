@@ -46,3 +46,13 @@ def test_benjamini_hochberg():
     p = np.array([0.001, 0.008, 0.039, 0.041, 0.042, 0.06, 0.074, 0.205, np.nan])
     out = benjamini_hochberg(p, 0.05)
     assert out.tolist()[:2] == [True, True] and not out[2:].any()
+
+
+def test_vix_is_known_only_the_next_utc_day(monkeypatch):
+    import lab4.data as d4
+    idx = pd.DatetimeIndex([pd.Timestamp("2024-03-01", tz="UTC"), pd.Timestamp("2024-03-04", tz="UTC")])
+    monkeypatch.setattr(d4, "load", lambda name: pd.DataFrame({"close": [15.0, 20.0]}, index=idx))
+    v = d4.vix_known()
+    assert list(v.index) == [pd.Timestamp("2024-03-02", tz="UTC"), pd.Timestamp("2024-03-05", tz="UTC")]
+    # a strategy deciding on Monday 2024-03-04 (looks up the value as of 2024-03-03) sees Friday's 15, not 20
+    assert v.asof(pd.Timestamp("2024-03-03", tz="UTC")) == 15.0
