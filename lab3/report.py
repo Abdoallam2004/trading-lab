@@ -88,10 +88,20 @@ def charts_partA(rolling: pd.DataFrame, summary: pd.DataFrame, out: Path):
     fig, axes = plt.subplots(2, 1, figsize=(11, 7), facecolor=SURFACE, sharex=True)
     for ax, frame in zip(axes, ("A", "B")):
         _style(ax)
-        top = summary[summary.frame == frame].head(4)
-        for color, (_, row) in zip((BLUE, ORANGE, AQUA, YELLOW), top.iterrows()):
+        series = []
+        for _, row in summary[summary.frame == frame].iterrows():
             g = rolling[(rolling.frame == frame) & (rolling.rule == row.rule) & (rolling.params == row.params)]
-            ax.plot(g.start, g.multiple - g.bench_multiple, color=color, linewidth=2, label=f"{row.rule} {row.params}")
+            y = (g.multiple - g.bench_multiple).to_numpy()
+            for item in series:   # identical results (e.g. S4's trim levels never fired) share one line
+                if item["rule"] == row.rule and np.allclose(item["y"], y, atol=1e-9):
+                    item["label"] += f" = {row.params}"
+                    break
+            else:
+                series.append({"rule": row.rule, "x": g.start, "y": y, "label": f"{row.rule} {row.params}"})
+            if len(series) == 4 and not any(np.allclose(i["y"], y) for i in series[:3]):
+                break
+        for color, item in zip((BLUE, ORANGE, AQUA, YELLOW), series[:4]):
+            ax.plot(item["x"], item["y"], color=color, linewidth=2, label=item["label"])
         ax.axhline(0, color=INK, linewidth=1)
         ax.set_ylabel("value÷contributed minus benchmark's", color=INK2, fontsize=8)
         bench = "B1 buy & hold" if frame == "A" else "B2 plain DCA"
@@ -128,7 +138,7 @@ def charts_partB(res: dict, out: Path):
         ax.plot(x, mid, color=MUTED, linewidth=1, label="random median")
         ax.plot(x, t["r"].to_numpy()[order].cumsum(), color=BLUE, linewidth=2, label=k)
         ax.axhline(0, color=AXIS, linewidth=0.8)
-        ax.set_title(f"{k}: {r['oos']['expectancy']:+.2f}R/trade, {r['rand_pct']:.0f}th pct", loc="left",
+        ax.set_title(f"{k}: {r['oos']['expectancy']:+.3f}R/trade, {ordinal(r['rand_pct'])} pct", loc="left",
                      color=INK, fontsize=9.5)
         ax.set_xlabel("OOS trade #", color=INK2, fontsize=8)
         ax.set_ylabel("cumulative R", color=INK2, fontsize=8)
@@ -141,6 +151,14 @@ def charts_partB(res: dict, out: Path):
 
 
 # ----------------------------------------------------------------------------- markdown
+def ordinal(x) -> str:
+    if x is None or not np.isfinite(x):
+        return "–"
+    n = int(round(x))
+    suf = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
 def f(x, kind="num"):
     if x is None or (isinstance(x, float) and not np.isfinite(x)):
         return "–"
@@ -209,7 +227,7 @@ def build_markdown(dev: dict, hold: dict, frozen: dict, notes: dict) -> str:
         r, h = res[k], hold[k]
         rows.append([f"**{k}** {_setup_doc(k).name}", f"`{', '.join(r['final'].rules) or 'bare trigger'}`",
                      r["oos"]["trades"], f(r["oos"]["expectancy"], "r"), f(r["oos"]["profit_factor"]),
-                     f"{r['rand_pct']:.0f}th", f(r["dsr"]), f(r["eth_m"]["expectancy"], "r"),
+                     ordinal(r["rand_pct"]), f(r["dsr"]), f(r["eth_m"]["expectancy"], "r"),
                      f(r["x2_m"]["expectancy"], "r"), f(r["oos"]["pct_months_up"], "pct"),
                      f"{f(h['metrics']['expectancy'], 'r')} ({h['metrics']['trades']})", verdict_md(h["label"])])
     L.append(table(["Setup", "Rules kept", "OOS trades", "Expectancy", "PF", "vs random", "DSR", "ETH", "2× costs",
@@ -248,7 +266,7 @@ def build_markdown(dev: dict, hold: dict, frozen: dict, notes: dict) -> str:
                 ["**Holdout** (BTC, frozen rules)", "2025-10→2026-09"] + mrow(h["metrics"])]
         L.append(table(["Run", "Period"] + [c[0] for c in MCOLS], rows))
         L.append("")
-        L.append(f"- Random-entry baseline: setup expectancy is at the **{r['rand_pct']:.0f}th percentile** of 1,000 runs "
+        L.append(f"- Random-entry baseline: setup expectancy is at the **{ordinal(r['rand_pct'])} percentile** of 1,000 runs "
                  f"(median random {f(float(np.median(r['rand_exp'])) if len(r['rand_exp']) else np.nan, 'r')}).")
         L.append(f"- Deflated Sharpe: **{f(r['dsr'])}** · IS→OOS degradation ratio (OOS ÷ mean train expectancy): "
                  f"{f(r['degradation'])}")
@@ -261,6 +279,10 @@ def build_markdown(dev: dict, hold: dict, frozen: dict, notes: dict) -> str:
                        [["holdout expectancy > 0", "✅" if h["metrics"]["trades"] and h["metrics"]["expectancy"] > 0
                          else "❌", f"{f(h['metrics']['expectancy'], 'r')} ({h['metrics']['trades']} trades)"]]))
         L.append(f"\nVerdict: **{verdict_md(h['label'])}**\n")
+        for line in notes.get("setup_extra", {}).get(k, []):
+            L.append(line)
+        if notes.get("setup_extra", {}).get(k):
+            L.append("")
 
     L.append("## Look-ahead tests and the holdout protocol\n")
     L += [f"- {x}" for x in notes["lookahead"]]

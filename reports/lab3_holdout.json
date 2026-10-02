@@ -1,0 +1,246 @@
+{
+ "run_at": "2026-10-02T08:27:22+00:00",
+ "frozen_sha256": "906682460d97747885532e5a3fd64ece708be4993c04e566f6086e9754f3d707",
+ "setups": {
+  "T1": {
+   "metrics": {
+    "trades": 120,
+    "win_rate": 0.3,
+    "avg_win_r": 1.216736850330301,
+    "avg_loss_r": -1.0,
+    "expectancy": -0.33497894490090957,
+    "profit_factor": 0.5214586501415577,
+    "cagr": -0.3429078257314403,
+    "max_dd": 0.359699435811103,
+    "exposure": 0.17420091876588403,
+    "pct_months_up": 0.25,
+    "streak_trades": 9,
+    "streak_days": 23,
+    "sharpe_trade": -0.32258754514549265
+   },
+   "choices": [
+    {
+     "tf": "4h",
+     "L": 30,
+     "target": "2R"
+    },
+    {
+     "tf": "1h",
+     "L": 60,
+     "target": "2R"
+    },
+    {
+     "tf": "4h",
+     "L": 30,
+     "target": "2R"
+    },
+    {
+     "tf": "1h",
+     "L": 60,
+     "target": "2R"
+    }
+   ],
+   "label": "FAIL"
+  },
+  "T1b": {
+   "metrics": {
+    "trades": 43,
+    "win_rate": 0.32558139534883723,
+    "avg_win_r": 1.7723700697485893,
+    "avg_loss_r": -1.0,
+    "expectancy": -0.09736788426790119,
+    "profit_factor": 0.8556269302234569,
+    "cagr": -0.06443319014287907,
+    "max_dd": 0.10248923884635797,
+    "exposure": 0.1155251178185286,
+    "pct_months_up": 0.4166666666666667,
+    "streak_trades": 6,
+    "streak_days": 30,
+    "sharpe_trade": -0.06645670376608634
+   },
+   "choices": [
+    {
+     "tf": "4h",
+     "target": "2R"
+    },
+    {
+     "tf": "4h",
+     "target": "2R"
+    },
+    {
+     "tf": "4h",
+     "target": "H"
+    },
+    {
+     "tf": "4h",
+     "target": "H"
+    }
+   ],
+   "label": "FAIL"
+  },
+  "T2": {
+   "metrics": {
+    "trades": 623,
+    "win_rate": 0.30337078651685395,
+    "avg_win_r": 0.6345844435613784,
+    "avg_loss_r": -0.9298263438944052,
+    "expectancy": -0.4552298128684934,
+    "profit_factor": 0.29720742131328903,
+    "cagr": -0.8359167974522634,
+    "max_dd": 0.8348987274970195,
+    "exposure": 0.21282725180198034,
+    "pct_months_up": 0.0,
+    "streak_trades": 18,
+    "streak_days": 11,
+    "sharpe_trade": -0.588395696961941
+   },
+   "choices": [
+    {
+     "m": 2.0,
+     "entry": "immediate",
+     "target_r": 2.0
+    },
+    {
+     "m": 2.0,
+     "entry": "immediate",
+     "target_r": 1.0
+    },
+    {
+     "m": 2.0,
+     "entry": "immediate",
+     "target_r": 2.0
+    },
+    {
+     "m": 2.0,
+     "entry": "immediate",
+     "target_r": 2.0
+    }
+   ],
+   "label": "FAIL"
+  },
+  "T3": {
+   "metrics": {
+    "trades": 38,
+    "win_rate": 0.2631578947368421,
+    "avg_win_r": 1.1947337277251582,
+    "avg_loss_r": -1.0,
+    "expectancy": -0.42243849270390577,
+    "profit_factor": 0.4266906170446994,
+    "cagr": -0.17940012117852866,
+    "max_dd": 0.20428478638104952,
+    "exposure": 0.1816210103253745,
+    "pct_months_up": 0.2727272727272727,
+    "streak_trades": 10,
+    "streak_days": 75,
+    "sharpe_trade": -0.4272275409196691
+   },
+   "choices": [
+    {
+     "tf": "1h",
+     "k": 3
+    },
+    {
+     "tf": "1h",
+     "k": 5
+    },
+    {
+     "tf": "1h",
+     "k": 5
+    },
+    {
+     "tf": "1h",
+     "k": 3
+    }
+   ],
+   "label": "FAIL"
+  },
+  "T4": {
+   "metrics": {
+    "trades": 81,
+    "win_rate": 0.2716049382716049,
+    "avg_win_r": 0.7587426080356546,
+    "avg_loss_r": -0.8324763177946197,
+    "expectancy": -0.40029339966787847,
+    "profit_factor": 0.33985467987531465,
+    "cagr": -0.23286221723888056,
+    "max_dd": 0.24134346457361433,
+    "exposure": 0.03767123407125932,
+    "pct_months_up": 0.0,
+    "streak_trades": 12,
+    "streak_days": 25,
+    "sharpe_trade": -0.31162758070333063
+   },
+   "choices": [
+    {
+     "tf": "1h"
+    },
+    {
+     "tf": "1h"
+    },
+    {
+     "tf": "1h"
+    },
+    {
+     "tf": "1h"
+    }
+   ],
+   "label": "FAIL"
+  },
+  "T5": {
+   "metrics": {
+    "trades": 86,
+    "win_rate": 0.2441860465116279,
+    "avg_win_r": 1.5657620873061628,
+    "avg_loss_r": -1.0,
+    "expectancy": -0.37347669961128577,
+    "profit_factor": 0.5058615974373757,
+    "cagr": -0.37875702545936407,
+    "max_dd": 0.42924833350198355,
+    "exposure": 0.8015981989344939,
+    "pct_months_up": 0.2727272727272727,
+    "streak_trades": 9,
+    "streak_days": 53,
+    "sharpe_trade": -0.3345435232051012
+   },
+   "choices": [
+    {
+     "tf": "4h"
+    },
+    {
+     "tf": "1h"
+    },
+    {
+     "tf": "4h"
+    },
+    {
+     "tf": "4h"
+    }
+   ],
+   "label": "FAIL"
+  },
+  "T6": {
+   "metrics": {
+    "trades": 0,
+    "win_rate": NaN,
+    "avg_win_r": NaN,
+    "avg_loss_r": NaN,
+    "expectancy": NaN,
+    "profit_factor": NaN,
+    "cagr": 0.0,
+    "max_dd": 0.0,
+    "exposure": 0.0,
+    "pct_months_up": NaN,
+    "streak_trades": 0,
+    "streak_days": 0,
+    "sharpe_trade": NaN
+   },
+   "choices": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "label": "FAIL"
+  }
+ }
+}

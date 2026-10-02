@@ -32,13 +32,15 @@ def notes_for(dev: dict, hold: dict, frozen: dict) -> dict:
         f"{best['A'].bench_median_dd:.0%}), and {len(b_pass)} beat plain weekly DCA (best: {best['B'].rule} "
         f"{best['B'].params}, {best['B'].pct_won:.0%} of starts, median gain {best['B'].median_diff:+.2f}× of "
         f"contributions, median drawdown {best['B'].median_dd:.0%} vs {best['B'].bench_median_dd:.0%}). "
-        f"At 2× costs {len(a2_pass)} (lump sum) and {len(b2_pass)} (weekly) still pass. Lab 2's single "
-        "out-of-sample window began at a cycle bottom, which is exactly when buy & hold is hardest to beat. "
+        f"At 2× costs {len(a2_pass)} (lump sum) and {len(b2_pass)} (weekly) still pass. The by-start chart shows "
+        "why Lab 2 said no: starting near a cycle bottom (late 2018, mid/late 2022) is exactly when these rules "
+        "lose to buy & hold, and Lab 2's only out-of-sample window began at the 2022–23 bottom. The weekly-DCA "
+        "edges (S2, S4) come from 2018–2021 starts and fade to about zero for 2022 starts. "
         "Treat these wins with care: the 57 windows overlap heavily (about 2.6 independent 3-year periods in "
         "2018–2025), so the win rates rest on two or three market cycles, not 57 independent tests. "
         f"The new graded market gate (A2) failed in both frames (best: {gate_best.pct_won:.0%} of starts). "
         f"In Part B, every setup lost money in walk-forward OOS on BTC after costs "
-        f"(from {min(exps.values()):+.2f}R to {max(exps.values()):+.2f}R per trade); before costs "
+        f"(from {min(exps.values()):+.3f}R to {max(exps.values()):+.3f}R per trade); before costs "
         f"{len(pos_gross)} of {len(res)} showed only a small edge (at most {max(gross.values()):+.2f}R), which the "
         "0.30% round trip erases, worst for tight-stop setups such as the 1-minute T2. "
         + ("Nothing passed, so the holdout could not rescue anything; "
@@ -143,5 +145,26 @@ def notes_for(dev: dict, hold: dict, frozen: dict) -> dict:
                            "). They are not trading setups, and their evidence rests on overlapping windows. If "
                            "you want to paper-trade anything, a weekly 200-week-SMA multiplier DCA alongside plain "
                            "DCA is the honest candidate. Run it as a side-by-side comparison, not as an edge.")
+    extra = {}
+    from pathlib import Path
+    import pandas as pd
+    csv = Path(__file__).resolve().parent.parent / "reports" / "lab3_t6_trend_counts.csv"
+    if csv.exists():
+        t6 = pd.read_csv(csv)
+        pos = int((t6.expectancy_all > 0).sum())
+        rows = ["| tf | b | d | trades 2019–2025 | most in one 12-month train window | expectancy (whole period) |",
+                "|---|---|---|---|---|---|"]
+        rows += [f"| {r.tf} | {r.b:.0%} | {r.d:.0%} | {r.trades_2019_2025} | {r.max_trades_in_a_train_window} | "
+                 f"{r.expectancy_all:+.3f}R |" for r in t6.itertuples()]
+        extra["T6"] = [
+            "**T6 with the trend filter (close > EMA200 at the crack)** — the spec asks for it to be reported: the "
+            "walk-forward never traded it, because no parameter set ever reached 30 trades in a 12-month train window "
+            f"(the most was {int(t6.max_trades_in_a_train_window.max())}). Diagnostic on development data "
+            "(`scripts/lab3_t6_trend_counts.py`):\n", *rows, "",
+            f"All {pos} of {len(t6)} parameter sets are positive here, which makes this the only lead in Part B. It is "
+            "**not** evidence: these are whole-period numbers (not out-of-sample), samples are tiny (1–37 trades in "
+            "6¾ years), trades overlap across the sets, and this variant was never run on the holdout (the frozen T6 "
+            "was the bare version). It would need years of forward data (or paper trading) before it could be tested "
+            "fairly; it is not a paper-trading candidate under this lab's rules."]
     return {"verdict": verdict, "part_a": part_a, "lookahead": lookahead, "assumptions": assumptions,
-            "candidates": candidates}
+            "candidates": candidates, "setup_extra": extra}
