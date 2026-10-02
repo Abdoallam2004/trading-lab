@@ -66,5 +66,8 @@ class PointInTimeUniverse:
         return self._memo[key]
 
     def monthly(self, start, end) -> dict[str, list[str]]:
-        dates = pd.date_range(pd.Timestamp(start).normalize(), end, freq="MS", tz="UTC")
+        def utc(x):
+            x = pd.Timestamp(x)
+            return x.tz_localize("UTC") if x.tz is None else x.tz_convert("UTC")
+        dates = pd.date_range(utc(start).normalize(), utc(end), freq="MS")
         return {f"{d:%Y-%m-%d}": self(d) for d in dates}

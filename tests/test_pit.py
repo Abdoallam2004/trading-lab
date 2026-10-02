@@ -47,6 +47,8 @@ def test_universe_memo_and_monthly():
     m = u.monthly("2022-01-01", "2022-03-15")
     assert list(m) == ["2022-01-01", "2022-02-01", "2022-03-01"]
     assert u(pd.Timestamp("2022-01-01", tz="UTC")) == m["2022-01-01"]
+    # naive start + tz-aware end (as in download_data.py) must work
+    assert list(u.monthly("2022-01-01", pd.Timestamp("2022-02-10", tz="UTC"))) == ["2022-01-01", "2022-02-01"]
 
 
 def test_walk_forward_trades_only_point_in_time_universe():

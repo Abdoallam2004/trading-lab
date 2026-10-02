@@ -52,6 +52,7 @@ def main() -> None:
     p.add_argument("--update", action="store_true", help="refresh the symbols in data/universe.json")
     p.add_argument("--verify", action="store_true", help="verify .CHECKSUM files (slower)")
     p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--skip-1d", action="store_true", help="use the cached 1d files as they are (no re-download)")
     args = p.parse_args()
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
     dl = data.Downloader(verify_checksum=args.verify)
@@ -81,8 +82,11 @@ def main() -> None:
         print(f"{len(all_syms)} eligible -> downloading 1d klines from {args.start} ...")
         excluded = groups
 
-    got = fetch_all(all_syms, "1d", dl, args.start, args.workers)
-    candidates = sorted(s for s, n in got.items() if n > 0)
+    if args.skip_1d:
+        candidates = sorted(s for s in all_syms if data.cache_path(s, "1d").exists())
+    else:
+        got = fetch_all(all_syms, "1d", dl, args.start, args.workers)
+        candidates = sorted(s for s, n in got.items() if n > 0)
 
     pit = PointInTimeUniverse.from_cache(candidates, top_n=args.top, lookback_months=PIT_LOOKBACK_MONTHS)
     now = pd.Timestamp.now(tz="UTC").normalize()
