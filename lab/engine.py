@@ -199,13 +199,12 @@ def run_portfolio(symbols: dict[str, SymbolData], setups: dict[str, Setup], exit
     cands = []
     for sym, st in setups.items():
         sd = symbols[sym]
-        for i, stop in zip(st.signal_idx, st.stops):
-            i = int(i)
-            if i + 1 >= len(sd):
-                continue
-            t = int(sd.times[i + 1])
-            if start_ns <= t < end_ns:
-                cands.append((t, sym, i, float(stop)))
+        idx = np.asarray(st.signal_idx, dtype=np.int64)
+        ok = idx + 1 < len(sd)
+        idx, stops = idx[ok], np.asarray(st.stops, dtype=float)[ok]
+        t = sd.times[idx + 1]
+        sel = (t >= start_ns) & (t < end_ns)
+        cands += zip(t[sel].tolist(), [sym] * int(sel.sum()), idx[sel].tolist(), stops[sel].tolist())
     cands.sort()
 
     cash = capital0
