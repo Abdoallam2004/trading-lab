@@ -1,0 +1,59 @@
+{
+ "frozen_at": "2026-10-02T10:10:36+00:00",
+ "note": "No unseen historical holdout remains; data/forward/ (scripts/daily_logger.py) is the holdout. Verdicts are final only after >= 3 months of forward data.",
+ "accumulation": [
+  {
+   "id": "S2-aggressive",
+   "frame": "weekly contributions",
+   "asset": "BTCUSDT",
+   "rule": "every Monday buy base x multiplier at the open (limit), multiplier from BTC weekly close / 200-week SMA of weekly closes; unspent money waits in a 0% cash reserve that funds later multipliers; trim 10% of holdings while the ratio > trim_at, at most once per 4 weeks",
+   "table": [
+    [
+     1.5,
+     3.0
+    ],
+    [
+     2.5,
+     1.0
+    ],
+    [
+     3.5,
+     0.25
+    ],
+    [
+     1000000000.0,
+     0.0
+    ]
+   ],
+   "trim_at": 3.5,
+   "trim_fraction": 0.1,
+   "evidence": {
+    "won_vs_B2_rolling_starts_C1": 0.7543859649122807,
+    "median_dd": 0.5551780545635472,
+    "median_dd_B2": 0.7267666864431358,
+    "won_vs_B1_lump_sum_C1": 0.7017543859649122
+   }
+  },
+  {
+   "id": "S1-20w",
+   "frame": "lump sum",
+   "asset": "BTCUSDT",
+   "rule": "hold BTC while the latest weekly close > 20-week SMA of weekly closes, else hold cash; check daily, trade on Mondays (limit at the open)",
+   "evidence": {
+    "won_vs_B1_rolling_starts_C1": 0.7543859649122807,
+    "median_dd": 0.4556654860328856,
+    "median_dd_B1": 0.7195983935742978
+   }
+  }
+ ],
+ "paper_trading": [],
+ "dead": {
+  "T1": "FAIL",
+  "T1b": "FAIL",
+  "T3": "FAIL",
+  "T4": "FAIL",
+  "T5": "FAIL",
+  "T6": "FAIL"
+ },
+ "n_trials_dsr": 1920
+}
