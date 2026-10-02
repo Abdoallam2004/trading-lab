@@ -5,3 +5,4 @@ __pycache__/
 data/
 reports/*synthetic*
 reports/scan_*.md
+data_synthetic/

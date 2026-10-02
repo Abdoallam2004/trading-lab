@@ -46,7 +46,7 @@ class Window:
 
     @property
     def label(self) -> str:
-        return f"train {self.train_start:%Y-%m}..{self.train_end:%Y-%m} | test {self.test_start:%Y-%m}..{self.test_end:%Y-%m}"
+        return f"train {self.train_start:%Y-%m}→{self.train_end:%Y-%m}, test {self.test_start:%Y-%m}→{self.test_end:%Y-%m}"
 
 
 def make_windows(data_start, data_end, train_months: int = 24, test_months: int = 12,
