@@ -75,13 +75,16 @@ class Market:
 
     @classmethod
     def from_cache(cls, symbols, timeframes=("1d", "4h"), data_dir=DATA_DIR) -> "Market":
+        """`symbols` may contain redenomination segments ('COCOSUSDT~20210118')."""
         frames = {tf: {} for tf in timeframes}
+        wanted = set(symbols)
         for tf in timeframes:
-            for s in symbols:
+            for base in sorted({data_mod.base_symbol(s) for s in symbols}):
                 try:
-                    frames[tf][s] = data_mod.load(s, tf, data_dir)
+                    segs = data_mod.load_segments(base, tf, data_dir)
                 except FileNotFoundError:
-                    pass
+                    continue
+                frames[tf].update({n: d for n, d in segs.items() if n in wanted})
         btc = None
         try:
             btc = data_mod.load("BTCUSDT", "1d", data_dir)

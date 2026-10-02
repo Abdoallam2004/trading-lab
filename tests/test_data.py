@@ -2,6 +2,7 @@ import io
 import zipfile
 from datetime import date
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -183,3 +184,37 @@ def test_downloader_switches_to_mirror_when_host_blocked():
     dl = data.Downloader(session=sess)
     assert dl.get(data.monthly_url("BTCUSDT", "1d", 2024, 1)) == b"ok"
     assert sess.urls[-1].startswith(data.MIRROR_URL) and dl.use_mirror
+
+
+def _bars(closes, opens=None, freq="1D", idx=None):
+    closes = np.asarray(closes, float)
+    opens = np.asarray(opens if opens is not None else np.r_[closes[0], closes[:-1]], float)
+    idx = idx if idx is not None else pd.date_range("2021-01-01", periods=len(closes), freq=freq, tz="UTC")
+    return pd.DataFrame({"open": opens, "high": np.maximum(opens, closes), "low": np.minimum(opens, closes),
+                         "close": closes, "volume": 1.0, "quote_volume": 1.0, "trades": 1.0}, index=idx)
+
+
+def test_split_redenomination_across_halt():
+    # COCOS-style: x1000 after a 4-day halt
+    idx = pd.DatetimeIndex(list(pd.date_range("2021-01-01", periods=5, freq="1D", tz="UTC")) +
+                           list(pd.date_range("2021-01-10", periods=5, freq="1D", tz="UTC")))
+    closes = [0.0005] * 5 + [0.5] * 5
+    segs = data.split_redenominations(_bars(closes, opens=closes, idx=idx), "1d")
+    assert [len(s) for s in segs] == [5, 5]
+
+
+def test_no_split_for_normal_moves_or_big_move_without_halt():
+    df = _bars([1, 1.5, 3, 2, 6, 5])            # up to 3x per bar, no halt
+    assert len(data.split_redenominations(df, "1d")) == 1
+    df = _bars([1, 1, 1], opens=[1, 1, 200])    # 200x with no halt -> still a break
+    assert len(data.split_redenominations(df, "1d")) == 2
+
+
+def test_load_segments_names(tmp_path):
+    idx = pd.DatetimeIndex(list(pd.date_range("2021-01-01", periods=3, freq="1D", tz="UTC")) +
+                           list(pd.date_range("2021-01-10", periods=3, freq="1D", tz="UTC")))
+    closes = [1.0] * 3 + [1000.0] * 3
+    data.save(_bars(closes, opens=closes, idx=idx), "COCOSUSDT", "1d", tmp_path)
+    segs = data.load_segments("COCOSUSDT", "1d", tmp_path)
+    assert list(segs) == ["COCOSUSDT~20210103", "COCOSUSDT"]
+    assert data.base_symbol("COCOSUSDT~20210103") == "COCOSUSDT"

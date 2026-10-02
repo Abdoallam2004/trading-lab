@@ -153,6 +153,11 @@ def build_markdown(results: list[StrategyWF], meta: dict, criteria: Criteria = C
     else:
         L.append("- **Survivorship bias:** the universe is today's top coins by volume. Coins that collapsed or were "
                  "delisted since 2020 are missing, so every result is somewhat optimistic.")
+    L.append("- Token redenominations / relaunches (e.g. COCOS x1000, LUNA → LUNA 2.0, QUICK /1000) are split into "
+             "separate assets (`SYMBOL~YYYYMMDD` = the old token, ending that day); no trade spans the swap.")
+    L.append("- Profit factor and max drawdown are in dollars on a compounding account, so a losing streak early "
+             "(e.g. 2022) weighs more than later wins; expectancy in R is the size-independent measure.")
+    L.append("- Flash-crash wicks (e.g. 10 Oct 2025) fill stops at the stop price; real fills would have been worse.")
     L.append("- Intrabar order is unknown on OHLC bars; when a bar touches both stop and target the stop is assumed first "
              "(conservative). Gaps through a level fill at the open.")
     L.append("- When cash runs short, simultaneous signals are filled in alphabetical order.")

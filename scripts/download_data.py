@@ -98,8 +98,9 @@ def main() -> None:
     gone = sorted(set(union) - set(current))
     print(f"coins that were top-{args.top} at some point but are not today ({len(gone)}): {', '.join(gone)}")
 
-    print(f"downloading 4h klines for {len(union)} coins ...")
-    fetch_all(union, "4h", dl, args.start, args.workers)
+    bases = sorted({data.base_symbol(s) for s in union})  # redenomination segments share one file
+    print(f"downloading 4h klines for {len(bases)} coins ...")
+    fetch_all(bases, "4h", dl, args.start, args.workers)
 
     prev = data.load_universe() if args.update else {}
     payload = {

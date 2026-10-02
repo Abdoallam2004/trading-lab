@@ -28,7 +28,7 @@ def rank_point_in_time(volumes: dict[str, pd.Series], when, top_n: int = TOP_N, 
     lo = when - pd.DateOffset(months=lookback_months)
     scores = {}
     for sym, v in volumes.items():
-        if exclusion_reason(sym) is not None or len(v) == 0:
+        if exclusion_reason(data_mod.base_symbol(sym)) is not None or len(v) == 0:
             continue
         if v.index[0] >= when or v.index[-1] < when - pd.Timedelta(days=max_stale_days):
             continue  # not listed yet / already delisted
@@ -54,7 +54,8 @@ class PointInTimeUniverse:
         vols = {}
         for s in symbols:
             try:
-                vols[s] = data_mod.load(s, "1d", data_dir)["quote_volume"]
+                for name, seg in data_mod.load_segments(s, "1d", data_dir).items():
+                    vols[name] = seg["quote_volume"]
             except FileNotFoundError:
                 pass
         return cls(vols, **kw)

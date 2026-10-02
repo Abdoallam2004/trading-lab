@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -284,6 +285,43 @@ def save(df: pd.DataFrame, symbol: str, interval: str, data_dir: Path = DATA_DIR
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path)
     return path
+
+
+def split_redenominations(df: pd.DataFrame, interval: str, jump: float = 5.0, hard_jump: float = 50.0,
+                          min_halt_bars: int = 2) -> list[pd.DataFrame]:
+    """Split a series where the token was redenominated / swapped / relaunched.
+
+    Signature in the archive: price jumps by >= `jump`x (up or down) between one bar's close
+    and the next bar's open across a trading halt (e.g. COCOS x1000, LUNA -> LUNA 2.0,
+    QUICK /1000), or by >= `hard_jump`x with no halt. The old token is treated as
+    delisted at the break and the new one as a fresh listing, so no trade and no
+    indicator spans the break.
+    """
+    if len(df) < 2:
+        return [df]
+    bar = pd.Timedelta(interval.replace("d", "D"))
+    ratio = (df["open"].to_numpy()[1:] / df["close"].to_numpy()[:-1])
+    ratio = np.maximum(ratio, 1 / ratio)
+    gap = (df.index[1:] - df.index[:-1]) >= min_halt_bars * bar
+    breaks = np.flatnonzero(((ratio >= jump) & gap) | (ratio >= hard_jump)) + 1
+    if len(breaks) == 0:
+        return [df]
+    edges = [0, *breaks.tolist(), len(df)]
+    return [df.iloc[a:b] for a, b in zip(edges, edges[1:]) if b > a]
+
+
+def segment_name(symbol: str, seg: pd.DataFrame, is_last: bool) -> str:
+    """The live segment keeps the plain symbol; older ones get '~YYYYMMDD' (their last day)."""
+    return symbol if is_last else f"{symbol}~{seg.index[-1]:%Y%m%d}"
+
+
+def base_symbol(name: str) -> str:
+    return name.split("~")[0]
+
+
+def load_segments(symbol: str, interval: str, data_dir: Path = DATA_DIR) -> dict[str, pd.DataFrame]:
+    segs = split_redenominations(load(symbol, interval, data_dir), interval)
+    return {segment_name(symbol, sg, k == len(segs) - 1): sg for k, sg in enumerate(segs)}
 
 
 def merge_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
