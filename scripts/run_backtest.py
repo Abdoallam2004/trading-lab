@@ -23,10 +23,11 @@ import pandas as pd
 
 import _bootstrap  # noqa: F401
 from lab import data
-from lab.config import DATA_DIR, REPORTS_DIR, CostModel, RiskModel
+from lab.config import DATA_DIR, PIT_LOOKBACK_MONTHS, REPORTS_DIR, START_DATE, CostModel, RiskModel
+from lab.pit import PointInTimeUniverse
 from lab.report import build_markdown, passed_payload
 from lab.strategies import STRATEGIES
-from lab.walkforward import Criteria, Market, walk_forward
+from lab.walkforward import Criteria, Market, make_windows, walk_forward, yearly_periods
 
 
 def main() -> None:
@@ -41,22 +42,42 @@ def main() -> None:
     args = p.parse_args()
 
     uni = data.load_universe(args.data_dir)
-    symbols = uni["symbols"]
-    print(f"loading {len(symbols)} coins ({uni.get('source')}) ...")
     t0 = time.time()
+    universe_at, pit_used = None, {}
+    if uni.get("candidates"):
+        # point-in-time universe: re-ranked at the start of every train/test period
+        pit = PointInTimeUniverse.from_cache(uni["candidates"], args.data_dir, top_n=uni.get("top_n", 50),
+                                             lookback_months=uni.get("lookback_months", PIT_LOOKBACK_MONTHS))
+        end = data.load("BTCUSDT", "1d", args.data_dir).index[-1]
+        start = pd.Timestamp(START_DATE, tz="UTC")
+        dates = set()
+        for w in make_windows(start, end, args.train_months, args.test_months):
+            dates |= {w.train_start, w.test_start}
+        dates |= {a for a, _ in yearly_periods(start, end)}
+        dates.add(end - pd.DateOffset(months=args.train_months))
+        pit_used = {f"{d:%Y-%m-%d}": pit(d) for d in sorted(dates)}
+        symbols = sorted(set().union(*pit_used.values()))
+        universe_at = pit
+        print(f"point-in-time universe: {len(pit_used)} snapshots, {len(symbols)} distinct coins")
+    else:
+        symbols = uni["symbols"]
+    print(f"loading {len(symbols)} coins ({uni.get('source')}) ...")
     market = Market.from_cache(symbols, args.timeframes, args.data_dir)
     if "BTCUSDT" not in market.ind.get("1d", {}):
         print("note: BTCUSDT 1d is not cached -> regime split unavailable "
               "(python scripts/download_data.py --symbols BTCUSDT --intervals 1d)")
     risk, costs, criteria = RiskModel(initial_capital=args.capital), CostModel(), Criteria()
     results = walk_forward(market, args.strategies, args.timeframes, risk=risk, costs=costs, criteria=criteria,
-                           train_months=args.train_months, test_months=args.test_months)
+                           train_months=args.train_months, test_months=args.test_months,
+                           universe_at=universe_at, data_start=START_DATE if universe_at else None)
     print(f"done in {time.time() - t0:.0f}s")
 
     meta = {
         "generated": datetime.now(timezone.utc).isoformat(timespec="minutes"),
         "data_source": uni.get("source", "binance"), "symbols": symbols,
-        "data_start": f"{market.start:%Y-%m-%d}", "data_end": f"{market.end:%Y-%m-%d}",
+        "current_universe": uni.get("symbols", []), "pit": pit_used, "excluded": uni.get("excluded", {}),
+        "lookback_months": uni.get("lookback_months", PIT_LOOKBACK_MONTHS), "top_n": uni.get("top_n", 50),
+        "data_start": START_DATE if universe_at else f"{market.start:%Y-%m-%d}", "data_end": f"{market.end:%Y-%m-%d}",
         "timeframes": args.timeframes, "fee": costs.fee_rate, "slippage": costs.slippage,
         "risk": risk.risk_per_trade, "max_pos": risk.max_position_frac,
         "train_months": args.train_months, "test_months": args.test_months,

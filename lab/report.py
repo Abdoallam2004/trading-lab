@@ -49,8 +49,12 @@ def build_markdown(results: list[StrategyWF], meta: dict, criteria: Criteria = C
         L.append("> ⚠️ **SYNTHETIC DATA. These numbers are a software smoke test on random prices "
                  "and say nothing about real markets. Do not trade on them.**\n")
     L.append(f"Generated {meta.get('generated', datetime.now(timezone.utc).isoformat(timespec='minutes'))}  ")
+    pit = meta.get("pit") or {}
+    uni_txt = (f"point-in-time top {meta.get('top_n', 50)} (re-ranked by prior {meta.get('lookback_months', 3)}-month "
+               f"volume at the start of every period; {len(meta.get('symbols', []))} distinct coins over time)"
+               if pit else f"{len(meta.get('symbols', []))} coins (fixed list)")
     L.append(f"Data: {meta.get('data_source')} · {meta.get('data_start')} → {meta.get('data_end')} · "
-             f"{len(meta.get('symbols', []))} coins · timeframes {', '.join(meta.get('timeframes', []))}  ")
+             f"{uni_txt} · timeframes {', '.join(meta.get('timeframes', []))}  ")
     L.append(f"Rules: spot only, long only, no leverage, no shorting · fees {meta['fee']:.2%}/side + "
              f"slippage {meta['slippage']:.2%}/fill · risk {meta['risk']:.1%} of equity per trade · "
              f"max {meta['max_pos']:.0%} of equity per coin · one position per coin  ")
@@ -120,9 +124,35 @@ def build_markdown(results: list[StrategyWF], meta: dict, criteria: Criteria = C
         L.append(_stats_table(coin.sort_values("pnl", ascending=False) if len(coin) else coin, "Coin"))
         L.append("")
 
-    L.append("## 4. Caveats\n")
-    L.append("- **Survivorship bias:** the universe is today's top coins by volume. Coins that collapsed or were "
-             "delisted since 2020 are missing, so every result is somewhat optimistic.")
+    if pit:
+        L.append("## 4. Point-in-time universe\n")
+        L.append("Each period trades only the coins that were the top by USDT volume over the 3 months *before* "
+                 "it started (excluded categories removed). Coins added / dropped versus the previous snapshot:\n")
+        current = set(meta.get("current_universe", []))
+        rows, prev = [], None
+        for d, syms in pit.items():
+            added = sorted(set(syms) - set(prev)) if prev is not None else []
+            dropped = sorted(set(prev) - set(syms)) if prev is not None else []
+            rows.append([d, len(syms), ", ".join(added) or "-", ", ".join(dropped) or "-"])
+            prev = syms
+        L.append(_table(["Period start", "Coins", "Added", "Dropped"], rows))
+        gone = sorted(set(meta.get("symbols", [])) - current)
+        L.append(f"\nCoins traded in some period that are **not** in today's top {meta.get('top_n', 50)} "
+                 f"({len(gone)}): {', '.join(gone) or '-'}\n")
+        L.append(f"First snapshot: {', '.join(next(iter(pit.values())))}\n")
+    if meta.get("excluded"):
+        L.append("## 5. Excluded pairs\n")
+        for reason, syms in meta["excluded"].items():
+            L.append(f"- **{reason}** ({len(syms)}): {', '.join(syms)}")
+        L.append("")
+
+    L.append("## 6. Caveats\n")
+    if pit:
+        L.append("- **Survivorship bias** is addressed with the point-in-time universe above. Coins delisted while "
+                 "a position was open are closed at their last traded price.")
+    else:
+        L.append("- **Survivorship bias:** the universe is today's top coins by volume. Coins that collapsed or were "
+                 "delisted since 2020 are missing, so every result is somewhat optimistic.")
     L.append("- Intrabar order is unknown on OHLC bars; when a bar touches both stop and target the stop is assumed first "
              "(conservative). Gaps through a level fill at the open.")
     L.append("- When cash runs short, simultaneous signals are filled in alphabetical order.")

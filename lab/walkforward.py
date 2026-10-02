@@ -104,8 +104,14 @@ class Market:
         return self._setups[key]
 
     def run(self, cfg: StrategyConfig, start=None, end=None, risk: RiskModel = RiskModel(),
-            costs: CostModel = CostModel(), capital: float | None = None) -> BacktestResult:
-        return run_portfolio(self.sd[cfg.timeframe], self.setups(cfg), cfg.exit, start, end, risk, costs,
+            costs: CostModel = CostModel(), capital: float | None = None, symbols=None) -> BacktestResult:
+        """Backtest one config; `symbols` restricts entries to that (point-in-time) universe."""
+        sd, setups = self.sd[cfg.timeframe], self.setups(cfg)
+        if symbols is not None:
+            keep = set(symbols)
+            sd = {s: v for s, v in sd.items() if s in keep}
+            setups = {s: v for s, v in setups.items() if s in keep}
+        return run_portfolio(sd, setups, cfg.exit, start, end, risk, costs,
                              initial_capital=capital, cache=self.cache)
 
     def annotate(self, trades: pd.DataFrame) -> pd.DataFrame:
@@ -152,14 +158,28 @@ class StrategyWF:
         return group_stats(t, col)
 
 
-def _stitch(market: Market, cfgs_by_window, windows, risk, costs):
-    """Run each window's config on its TEST period, carrying capital forward."""
+def _all(_when):
+    return None  # no point-in-time universe: every loaded symbol
+
+
+def yearly_periods(start, end, months: int = 12) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    out = []
+    while start < end:
+        nxt = min(start + pd.DateOffset(months=months), end)
+        out.append((start, nxt))
+        start = nxt
+    return out
+
+
+def _stitch(market: Market, cfgs_by_period, periods, risk, costs, universe_at=_all):
+    """Run each period's config on that period (universe re-ranked at its start), carrying capital."""
     capital = risk.initial_capital
     trades, curves = [], []
-    for wi, (w, cfg) in enumerate(zip(windows, cfgs_by_window)):
+    for wi, ((start, end), cfg) in enumerate(zip(periods, cfgs_by_period)):
         if cfg is None:
             continue
-        res = market.run(cfg, w.test_start, w.test_end, risk, costs, capital)
+        res = market.run(cfg, start, end, risk, costs, capital, symbols=universe_at(start))
         t = res.trades.assign(window=wi, config=cfg.label)
         trades.append(t)
         if len(res.equity):
@@ -173,8 +193,15 @@ def _stitch(market: Market, cfgs_by_window, windows, risk, costs):
 def walk_forward(market: Market, strategies=STRATEGIES, timeframes=("1d", "4h"), windows=None,
                  risk: RiskModel = RiskModel(), costs: CostModel = CostModel(),
                  criteria: Criteria = Criteria(), train_months: int = 24, test_months: int = 12,
-                 progress=print) -> list[StrategyWF]:
-    windows = windows or make_windows(market.start, market.end, train_months, test_months)
+                 progress=print, universe_at=None, data_start=None) -> list[StrategyWF]:
+    """`universe_at(date) -> [symbols]` gives the point-in-time universe; it is evaluated at the
+    start of every TRAIN and TEST period, so each period only trades coins that were top-N then."""
+    universe_at = universe_at or _all
+    data_start = pd.Timestamp(data_start) if data_start is not None else market.start
+    if data_start.tz is None and market.start.tz is not None:
+        data_start = data_start.tz_localize("UTC")
+    windows = windows or make_windows(data_start, market.end, train_months, test_months)
+    test_periods = [(w.test_start, w.test_end) for w in windows]
     if not windows:
         raise ValueError("not enough history for a single walk-forward window")
     timeframes = [tf for tf in timeframes if tf in market.ind]
@@ -186,14 +213,14 @@ def walk_forward(market: Market, strategies=STRATEGIES, timeframes=("1d", "4h"),
         for wi, w in enumerate(windows):
             best, best_score, best_res = None, -np.inf, None
             for cfg in grid:
-                res = market.run(cfg, w.train_start, w.train_end, risk, costs)
+                res = market.run(cfg, w.train_start, w.train_end, risk, costs, symbols=universe_at(w.train_start))
                 sc = score(summarize(res.trades, res.equity, res.initial_capital), criteria.min_train_trades)
                 if sc > best_score:
                     best, best_score, best_res = cfg, sc, res
             # every config on TEST: does the optimiser's pick beat the median pick?
             test_exp = {}
             for cfg in grid:
-                r = market.run(cfg, w.test_start, w.test_end, risk, costs)
+                r = market.run(cfg, w.test_start, w.test_end, risk, costs, symbols=universe_at(w.test_start))
                 test_exp[cfg] = trade_stats(r.trades)["expectancy_r"]
             vals = np.array([v for v in test_exp.values() if np.isfinite(v)])
             row = {"window": w.label, "chosen": best.label if best else "none (no config met min trades)",
@@ -201,13 +228,13 @@ def walk_forward(market: Market, strategies=STRATEGIES, timeframes=("1d", "4h"),
                    "test_median_cfg_exp_r": float(np.median(vals)) if len(vals) else np.nan,
                    "test_frac_cfg_positive": float((vals > 0).mean()) if len(vals) else np.nan,
                    "chosen_test_exp_r": test_exp.get(best, np.nan) if best else np.nan,
-                   "chosen_cfg": best}
+                   "chosen_cfg": best, "universe_test": universe_at(w.test_start)}
             if best is not None:
                 is_trades.append(best_res.trades)
             chosen.append(best)
             wrows.append(row)
             progress(f"  {strat:<9} {w.label}: {row['chosen']}")
-        oos_trades, oos_eq = _stitch(market, chosen, windows, risk, costs)
+        oos_trades, oos_eq = _stitch(market, chosen, test_periods, risk, costs, universe_at)
         for wi, row in enumerate(wrows):
             wt = oos_trades[oos_trades["window"] == wi] if len(oos_trades) else oos_trades
             row["test"] = trade_stats(wt)
@@ -215,15 +242,17 @@ def walk_forward(market: Market, strategies=STRATEGIES, timeframes=("1d", "4h"),
 
         spec_cfgs = {tf: StrategyConfig.make(strat, tf, SPEC_PARAMS[strat], ExitConfig("2R_3R")) for tf in timeframes}
         spec_cfg = spec_cfgs["1d"] if "1d" in spec_cfgs else next(iter(spec_cfgs.values()))
-        spec_trades, spec_eq = _stitch(market, [spec_cfg] * len(windows), windows, risk, costs)
-        full = market.run(spec_cfg, None, None, risk, costs)
-        spec_full_trades = market.annotate(full.trades)
+        spec_trades, spec_eq = _stitch(market, [spec_cfg] * len(windows), test_periods, risk, costs, universe_at)
+        full_periods = yearly_periods(data_start, market.end + pd.Timedelta(seconds=1))
+        spec_full_trades, full_eq = _stitch(market, [spec_cfg] * len(full_periods), full_periods, risk, costs,
+                                            universe_at)
 
         # live config: optimise on the most recent TRAIN-length period ending at the last bar
         live_start = market.end - pd.DateOffset(months=train_months)
         live, live_score = None, -np.inf
         for cfg in grid:
-            res = market.run(cfg, live_start, market.end + pd.Timedelta(seconds=1), risk, costs)
+            res = market.run(cfg, live_start, market.end + pd.Timedelta(seconds=1), risk, costs,
+                             symbols=universe_at(live_start))
             sc = score(summarize(res.trades, res.equity, res.initial_capital), criteria.min_train_trades)
             if sc > live_score:
                 live, live_score = cfg, sc
@@ -236,7 +265,7 @@ def walk_forward(market: Market, strategies=STRATEGIES, timeframes=("1d", "4h"),
             spec_trades=spec_trades, spec_equity=spec_eq,
             spec=summarize(spec_trades, spec_eq, risk.initial_capital) if len(spec_eq) else trade_stats(spec_trades),
             spec_full_trades=spec_full_trades,
-            spec_full=summarize(full.trades, full.equity, full.initial_capital),
+            spec_full=summarize(spec_full_trades, full_eq, risk.initial_capital) if len(full_eq) else trade_stats(spec_full_trades),
             live_config=live,
         )
         judge(wf, criteria)

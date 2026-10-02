@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 REPORTS_DIR = ROOT / "reports"
 
-START_DATE = "2020-01-01"
+START_DATE = "2020-01-01"       # first backtest bar
+DOWNLOAD_START = "2019-10-01"   # 3 extra months so the 2020-01-01 universe can be ranked point-in-time
+PIT_LOOKBACK_MONTHS = 3
 INTERVALS = ("1d", "4h")
 TOP_N = 50
 QUOTE = "USDT"

@@ -1,56 +1,117 @@
-"""Step 1: build the top-50 universe and download daily + 4h klines (2020 -> today).
+"""Step 1: download daily + 4h klines and build the point-in-time universe.
 
-Usage:
-    python scripts/download_data.py                 # full run (universe + all data)
-    python scripts/download_data.py --symbols BTCUSDT ETHUSDT
-    python scripts/download_data.py --update        # incremental refresh of the saved universe
+    python scripts/download_data.py            # full run
+    python scripts/download_data.py --update   # incremental refresh (same symbol set)
+    python scripts/download_data.py --symbols BTCUSDT ETHUSDT   # fixed list, no ranking
+
+Full run:
+  1. list every USDT spot pair in the archive (including delisted ones) and print the exclusions
+  2. download 1d klines for every eligible pair (needed to rank volume at any past date)
+  3. rank the top 50 by prior-3-month USDT volume at every month start since 2020 (point-in-time)
+  4. download 4h klines for every coin that was ever in one of those top-50 lists
 """
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+
+import pandas as pd
 
 import _bootstrap  # noqa: F401
 from lab import data
-from lab.config import INTERVALS, START_DATE, TOP_N
-from lab.universe import exclusion_reason
+from lab.config import DOWNLOAD_START, INTERVALS, PIT_LOOKBACK_MONTHS, START_DATE, TOP_N
+from lab.pit import PointInTimeUniverse
+from lab.universe import excluded_by_reason, exclusion_reason
+
+
+def fetch_all(symbols, interval, dl, start, workers):
+    def one(sym):
+        try:
+            df = data.update_symbol(sym, interval, dl, start=start, workers=4)
+            return sym, len(df), (f"{df.index[0]:%Y-%m-%d}..{df.index[-1]:%Y-%m-%d}" if len(df) else "no data")
+        except Exception as e:  # keep going, report at the end
+            return sym, -1, str(e)
+
+    out = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for i, (sym, n, span) in enumerate(ex.map(one, symbols), 1):
+            out[sym] = n
+            if n < 0 or i % 25 == 0 or i == len(symbols):
+                print(f"  [{i}/{len(symbols)}] {interval} {sym}: {'ERROR ' if n < 0 else ''}{span}")
+    return out
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--symbols", nargs="*", help="explicit symbols (skip volume ranking)")
+    p.add_argument("--symbols", nargs="*", help="explicit symbols (no point-in-time ranking)")
     p.add_argument("--top", type=int, default=TOP_N)
-    p.add_argument("--start", default=START_DATE)
-    p.add_argument("--intervals", nargs="*", default=list(INTERVALS))
-    p.add_argument("--update", action="store_true", help="reuse data/universe.json, only fetch new bars")
+    p.add_argument("--start", default=DOWNLOAD_START)
+    p.add_argument("--update", action="store_true", help="refresh the symbols in data/universe.json")
     p.add_argument("--verify", action="store_true", help="verify .CHECKSUM files (slower)")
+    p.add_argument("--workers", type=int, default=8)
     args = p.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
+    logging.basicConfig(level=logging.WARNING, format="%(message)s")
     dl = data.Downloader(verify_checksum=args.verify)
-    if args.update:
-        symbols = data.load_universe()["symbols"]
-    elif args.symbols:
+
+    if args.symbols:
         bad = {s: exclusion_reason(s) for s in args.symbols if exclusion_reason(s)}
         if bad:
             raise SystemExit(f"excluded symbols: {bad}")
-        symbols = args.symbols
-        data.save_universe(symbols, data.rank_by_quote_volume(symbols, dl).reindex(symbols).fillna(0))
-    else:
-        print("listing USDT spot pairs on data.binance.vision ...")
-        all_syms = dl.list_symbols()
-        candidates = [s for s in all_syms if exclusion_reason(s) is None]
-        print(f"{len(all_syms)} USDT pairs, {len(candidates)} after exclusions; ranking by last-month volume ...")
-        vols = data.rank_by_quote_volume(candidates, dl)
-        symbols = data.select_universe(all_syms, vols, args.top)
-        data.save_universe(symbols, vols)
-        print("universe:", ", ".join(symbols))
+        for tf in INTERVALS:
+            fetch_all(args.symbols, tf, dl, args.start, args.workers)
+        data.save_universe(args.symbols, pd.Series(dtype=float))
+        return
 
-    for i, sym in enumerate(symbols, 1):
-        for tf in args.intervals:
-            df = data.update_symbol(sym, tf, dl, start=args.start)
-            span = f"{df.index[0]:%Y-%m-%d} -> {df.index[-1]:%Y-%m-%d}" if len(df) else "no data"
-            print(f"[{i:2d}/{len(symbols)}] {sym:<12} {tf:<3} {len(df):6d} bars  {span}")
+    if args.update:
+        uni = data.load_universe()
+        all_syms = uni.get("candidates", uni["symbols"])
+        print(f"updating 1d for {len(all_syms)} candidates ...")
+    else:
+        print("listing USDT spot pairs (incl. delisted) ...")
+        listed = dl.list_symbols()
+        groups = excluded_by_reason(listed)
+        n_ex = sum(len(v) for v in groups.values())
+        print(f"{len(listed)} USDT pairs, {n_ex} excluded:")
+        for reason, syms in groups.items():
+            print(f"  - {reason} ({len(syms)}): {', '.join(syms)}")
+        all_syms = [s for s in listed if exclusion_reason(s) is None]
+        print(f"{len(all_syms)} eligible -> downloading 1d klines from {args.start} ...")
+        excluded = groups
+
+    got = fetch_all(all_syms, "1d", dl, args.start, args.workers)
+    candidates = sorted(s for s, n in got.items() if n > 0)
+
+    pit = PointInTimeUniverse.from_cache(candidates, top_n=args.top, lookback_months=PIT_LOOKBACK_MONTHS)
+    now = pd.Timestamp.now(tz="UTC").normalize()
+    monthly = pit.monthly(START_DATE, now)
+    current = pit(now)
+    union = sorted(set().union(*monthly.values(), current))
+    print(f"point-in-time top {args.top}: {len(monthly)} monthly snapshots, {len(union)} distinct coins over time")
+    print("current universe:", ", ".join(current))
+    gone = sorted(set(union) - set(current))
+    print(f"coins that were top-{args.top} at some point but are not today ({len(gone)}): {', '.join(gone)}")
+
+    print(f"downloading 4h klines for {len(union)} coins ...")
+    fetch_all(union, "4h", dl, args.start, args.workers)
+
+    prev = data.load_universe() if args.update else {}
+    payload = {
+        "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source": "binance",
+        "symbols": current,
+        "top_n": args.top,
+        "lookback_months": PIT_LOOKBACK_MONTHS,
+        "candidates": candidates,
+        "ever_in_universe": union,
+        "pit_monthly": monthly,
+        "excluded": excluded if not args.update else prev.get("excluded", {}),
+    }
+    data.universe_path().parent.mkdir(parents=True, exist_ok=True)
+    data.universe_path().write_text(json.dumps(payload, indent=1))
+    print(f"saved {data.universe_path()}")
 
 
 if __name__ == "__main__":
