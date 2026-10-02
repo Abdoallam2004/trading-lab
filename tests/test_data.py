@@ -116,3 +116,70 @@ def test_drop_unclosed():
     df = pd.DataFrame({"close": [1, 2, 3]}, index=idx)
     out = data.drop_unclosed(df, "4h", now=pd.Timestamp("2026-01-01 10:00", tz="UTC"))
     assert len(out) == 2
+
+
+def test_plan_urls_uses_daily_files_when_last_month_not_published():
+    today = date(2026, 10, 2)
+    avail = {data.monthly_url("BTCUSDT", "1d", 2026, m) for m in (7, 8)}          # September missing
+    avail |= {data.daily_url("BTCUSDT", "1d", date(2026, 9, d)) for d in range(1, 31)}
+    avail |= {data.daily_url("BTCUSDT", "1d", date(2026, 10, 1))}
+    urls = data.plan_urls("BTCUSDT", "1d", date(2026, 7, 1), today, avail)
+    assert urls[:2] == [data.monthly_url("BTCUSDT", "1d", 2026, 7), data.monthly_url("BTCUSDT", "1d", 2026, 8)]
+    assert sum("daily" in u and "2026-09-" in u for u in urls) == 30
+    assert urls[-1].endswith("2026-10-01.zip")
+
+
+def test_plan_urls_skips_months_before_listing():
+    avail = {data.monthly_url("NEWUSDT", "1d", 2024, m) for m in (5, 6)}
+    urls = data.plan_urls("NEWUSDT", "1d", date(2024, 1, 1), date(2024, 7, 15), avail)
+    assert urls == sorted(avail)
+
+
+class MonthDL:
+    """get/get_zip_frame stub: has data for the months in `months` only."""
+
+    def __init__(self, months, vols):
+        self.months, self.vols = months, vols
+
+    def get(self, url):
+        return b"x" if any(f"-{m}.zip" in url for m in self.months) else None
+
+    def get_zip_frame(self, url):
+        sym = url.split("/klines/")[1].split("/")[0]
+        if not self.get(url) or sym not in self.vols:
+            return None
+        return pd.DataFrame({"quote_volume": [self.vols[sym]]})
+
+
+def test_rank_falls_back_to_previous_month_when_archive_not_published():
+    dl = MonthDL(["2026-08"], {"BTCUSDT": 5.0, "ETHUSDT": 3.0})
+    ranked = data.rank_by_quote_volume(["ETHUSDT", "BTCUSDT"], dl, today=date(2026, 10, 2), workers=1)
+    assert list(ranked.index) == ["BTCUSDT", "ETHUSDT"]
+    dl2 = MonthDL(["2026-09"], {"BTCUSDT": 5.0})
+    assert data.published_month(dl2, date(2026, 10, 2)) == date(2026, 9, 1)
+
+
+def test_parse_keys_xml():
+    xml = """<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>true</IsTruncated>
+    <Contents><Key>data/spot/monthly/klines/BTCUSDT/1d/BTCUSDT-1d-2020-01.zip</Key></Contents>
+    <Contents><Key>data/spot/monthly/klines/BTCUSDT/1d/BTCUSDT-1d-2020-01.zip.CHECKSUM</Key></Contents>
+    </ListBucketResult>"""
+    keys, marker = data.parse_keys_xml(xml)
+    assert len(keys) == 2 and marker == keys[-1]
+
+
+def test_downloader_switches_to_mirror_when_host_blocked():
+    class Blocked:
+        def __init__(self):
+            self.urls = []
+
+        def get(self, url, timeout=None, params=None):
+            self.urls.append(url)
+            if url.startswith(data.BASE_URL):
+                raise data.requests.ConnectionError("blocked")
+            return FakeResp(200, b"ok")
+
+    sess = Blocked()
+    dl = data.Downloader(session=sess)
+    assert dl.get(data.monthly_url("BTCUSDT", "1d", 2024, 1)) == b"ok"
+    assert sess.urls[-1].startswith(data.MIRROR_URL) and dl.use_mirror

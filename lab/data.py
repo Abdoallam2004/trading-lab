@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 
 BASE_URL = "https://data.binance.vision"
 LISTING_URL = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+MIRROR_URL = LISTING_URL  # the S3 bucket behind data.binance.vision serves the same files
 API_URL = "https://api.binance.com"
 
 KLINE_COLUMNS = [
@@ -101,6 +102,16 @@ def parse_listing_xml(xml_text: str) -> tuple[list[str], str | None]:
     return symbols, next_marker
 
 
+def parse_keys_xml(xml_text: str) -> tuple[list[str], str | None]:
+    """Parse an S3 ListBucket page without delimiter -> (object keys, next marker or None)."""
+    root = ET.fromstring(xml_text)
+    ns = root.tag.split("}")[0] + "}" if root.tag.startswith("{") else ""
+    keys = [c.find(f"{ns}Key").text for c in root.findall(f"{ns}Contents")]
+    truncated = root.find(f"{ns}IsTruncated")
+    more = truncated is not None and truncated.text == "true"
+    return keys, (keys[-1] if more and keys else None)
+
+
 # --------------------------------------------------------------------------- urls
 def monthly_url(symbol: str, interval: str, year: int, month: int) -> str:
     return (f"{BASE_URL}/data/spot/monthly/klines/{symbol}/{interval}/"
@@ -121,17 +132,37 @@ def month_range(start: date, end: date) -> list[tuple[int, int]]:
     return out
 
 
-def plan_urls(symbol: str, interval: str, start: date, today: date) -> list[str]:
-    """Monthly files for complete months, daily files for the current month up to yesterday."""
+def daily_urls_for_month(symbol: str, interval: str, year: int, month: int, start: date, today: date) -> list[str]:
+    day = max(date(year, month, 1), start)
+    out = []
+    while day.month == month and day < today:
+        out.append(daily_url(symbol, interval, day))
+        day += timedelta(days=1)
+    return out
+
+
+def plan_urls(symbol: str, interval: str, start: date, today: date,
+              available: set[str] | None = None) -> list[str]:
+    """Monthly files for complete months, daily files for the current month up to yesterday.
+
+    `available` (from an S3 listing) filters out files that do not exist. A month whose
+    monthly file is not published yet (the archive lags a few days after month end) is
+    replaced by its daily files.
+    """
     first_of_month = today.replace(day=1)
     last_complete = first_of_month - timedelta(days=1)
     urls = []
-    if start <= last_complete:
-        urls += [monthly_url(symbol, interval, y, m) for y, m in month_range(start, last_complete)]
-    day = max(start, first_of_month)
-    while day < today:
-        urls.append(daily_url(symbol, interval, day))
-        day += timedelta(days=1)
+    months = month_range(start, last_complete) if start <= last_complete else []
+    have_monthly = [ym for ym in months if available is None or monthly_url(symbol, interval, *ym) in available]
+    last_monthly = max(have_monthly) if have_monthly else None
+    for ym in months:
+        if ym in have_monthly:
+            urls.append(monthly_url(symbol, interval, *ym))
+        elif available is not None and (last_monthly is None or ym > last_monthly):
+            urls += daily_urls_for_month(symbol, interval, *ym, start, today)  # not published yet
+    urls += daily_urls_for_month(symbol, interval, first_of_month.year, first_of_month.month, start, today)
+    if available is not None:
+        urls = [u for u in urls if u in available]
     return urls
 
 
@@ -139,24 +170,69 @@ def plan_urls(symbol: str, interval: str, start: date, today: date) -> list[str]
 class Downloader:
     def __init__(self, session: requests.Session | None = None, verify_checksum: bool = False,
                  timeout: float = 30.0, retries: int = 3):
-        self.session = session or requests.Session()
+        if session is None:
+            session = requests.Session()
+            adapter = requests.adapters.HTTPAdapter(pool_connections=8, pool_maxsize=64)
+            session.mount("https://", adapter)
+        self.session = session
         self.verify_checksum = verify_checksum
         self.timeout = timeout
         self.retries = retries
+        self.use_mirror = False
+
+    def _resolve(self, url: str) -> str:
+        if self.use_mirror and url.startswith(BASE_URL):
+            return MIRROR_URL + url[len(BASE_URL):]
+        return url
 
     def get(self, url: str) -> bytes | None:
-        """GET bytes; None on 404 (file does not exist, e.g. coin not listed yet)."""
+        """GET bytes; None on 404 (file does not exist, e.g. coin not listed yet).
+
+        If data.binance.vision itself is unreachable (DNS, firewall, proxy), switch to the
+        S3 bucket that backs it.
+        """
         last_err = None
-        for _ in range(self.retries):
+        for _ in range(self.retries + 1):
             try:
-                r = self.session.get(url, timeout=self.timeout)
+                r = self.session.get(self._resolve(url), timeout=self.timeout)
+                if r.status_code in (403, 404) and self.use_mirror:
+                    return None  # S3 answers 403 for missing keys on some buckets
                 if r.status_code == 404:
                     return None
                 r.raise_for_status()
                 return r.content
+            except requests.ConnectionError as e:
+                last_err = e
+                if not self.use_mirror and url.startswith(BASE_URL):
+                    log.warning("data.binance.vision unreachable, using S3 mirror %s", MIRROR_URL)
+                    self.use_mirror = True
             except requests.RequestException as e:  # retry transient errors
                 last_err = e
         raise RuntimeError(f"failed to download {url}: {last_err}")
+
+    def list_keys(self, prefix: str) -> list[str]:
+        keys, marker = [], None
+        while True:
+            params = {"prefix": prefix}
+            if marker:
+                params["marker"] = marker
+            r = self.session.get(LISTING_URL, params=params, timeout=self.timeout)
+            r.raise_for_status()
+            page, marker = parse_keys_xml(r.text)
+            keys += page
+            if not marker:
+                return keys
+
+    def available_urls(self, symbol: str, interval: str, months: list[tuple[int, int]]) -> set[str] | None:
+        """URLs of the monthly files plus the daily files of `months`; None if listing fails."""
+        try:
+            keys = self.list_keys(f"data/spot/monthly/klines/{symbol}/{interval}/")
+            for y, m in months:
+                keys += self.list_keys(f"data/spot/daily/klines/{symbol}/{interval}/{symbol}-{interval}-{y:04d}-{m:02d}")
+        except requests.RequestException as e:
+            log.warning("S3 listing failed (%s); downloading blind", e)
+            return None
+        return {f"{BASE_URL}/{k}" for k in keys if k.endswith(".zip")}
 
     def get_zip_frame(self, url: str) -> pd.DataFrame | None:
         content = self.get(url)
@@ -231,7 +307,17 @@ def update_symbol(symbol: str, interval: str, dl: Downloader, start: str = START
         if len(existing):
             # re-fetch from the month of the last cached bar onwards
             start_d = max(start_d, existing.index[-1].date().replace(day=1))
-    urls = plan_urls(symbol, interval, start_d, today)
+    first = today.replace(day=1)
+    prev = first - timedelta(days=1)
+    recent = [(prev.year, prev.month), (first.year, first.month)]
+    available = dl.available_urls(symbol, interval, recent) if hasattr(dl, "available_urls") else None
+    urls = plan_urls(symbol, interval, start_d, today, available)
+    if available is None:
+        # no listing: if last month's monthly file is missing, fall back to its daily files
+        last = monthly_url(symbol, interval, prev.year, prev.month)
+        if last in urls and dl.get_zip_frame(last) is None:
+            urls.remove(last)
+            urls += daily_urls_for_month(symbol, interval, prev.year, prev.month, start_d, today)
     with ThreadPoolExecutor(max_workers=workers) as ex:
         frames = list(ex.map(dl.get_zip_frame, urls))
     df = merge_frames([existing] + frames)
@@ -241,14 +327,24 @@ def update_symbol(symbol: str, interval: str, dl: Downloader, start: str = START
     return df
 
 
-def rank_by_quote_volume(symbols: list[str], dl: Downloader, today: date | None = None,
-                         workers: int = 16) -> pd.Series:
-    """Rank symbols by USDT volume over the last complete month (daily klines)."""
+def published_month(dl: Downloader, today: date | None = None, probe: str = "BTCUSDT") -> date:
+    """Last month whose monthly archive exists. Month M is published a few days into M+1,
+    so early in a month this falls back to the month before."""
     today = today or datetime.now(timezone.utc).date()
     last_month = today.replace(day=1) - timedelta(days=1)
+    if dl.get(monthly_url(probe, "1d", last_month.year, last_month.month)) is not None:
+        return last_month.replace(day=1)
+    return (last_month.replace(day=1) - timedelta(days=1)).replace(day=1)
+
+
+def rank_by_quote_volume(symbols: list[str], dl: Downloader, today: date | None = None,
+                         workers: int = 16) -> pd.Series:
+    """Rank symbols by USDT volume over the last *published* month (daily klines).
+    Every symbol is measured on the same month, so a coin delisted last month scores 0."""
+    m = published_month(dl, today)
 
     def vol(sym: str) -> float:
-        df = dl.get_zip_frame(monthly_url(sym, "1d", last_month.year, last_month.month))
+        df = dl.get_zip_frame(monthly_url(sym, "1d", m.year, m.month))
         return float(df["quote_volume"].sum()) if df is not None and len(df) else 0.0
 
     with ThreadPoolExecutor(max_workers=workers) as ex:

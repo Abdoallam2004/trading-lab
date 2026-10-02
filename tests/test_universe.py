@@ -26,3 +26,24 @@ def test_non_usdt_pairs_rejected():
 def test_filter_keeps_majors():
     syms = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "USDCUSDT", "SHIBUSDT", "ETHUPUSDT"]
     assert filter_symbols(syms) == ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+
+
+def test_tokenized_stocks_excluded_but_crypto_ending_in_b_kept():
+    for s in ["SKHYBUSDT", "MUBUSDT", "SNXXBUSDT", "AAPLBUSDT", "SPYBUSDT", "NVDABUSDT"]:
+        assert exclusion_reason(s) == "tokenized stock/ETF", s
+    for s in ["BNBUSDT", "ARBUSDT", "CKBUSDT", "TRBUSDT"]:
+        assert exclusion_reason(s) is None, s
+
+
+def test_new_meme_and_misc_exclusions():
+    assert exclusion_reason("GIGGLEUSDT") == "meme coin"
+    assert exclusion_reason("币安人生USDT") == "meme coin"
+    assert exclusion_reason("BULLUSDT") == "leveraged token"
+    assert exclusion_reason("BNSOLUSDT") == "wrapped/backed asset"
+    assert exclusion_reason("XECUSDT") is None  # eCash is not a meme coin
+
+
+def test_excluded_by_reason_groups():
+    from lab.universe import excluded_by_reason
+    g = excluded_by_reason(["BTCUSDT", "DOGEUSDT", "USDCUSDT", "MUBUSDT"])
+    assert g == {"meme coin": ["DOGEUSDT"], "stablecoin": ["USDCUSDT"], "tokenized stock/ETF": ["MUBUSDT"]}
